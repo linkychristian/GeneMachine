@@ -1,0 +1,209 @@
+// SimulationCore.cs - 这是完全独立的计算模块
+using System.Threading;
+using System.Diagnostics;
+int CellMaxNum = 100;//每个环境格能容纳细胞的总数的最大值
+int CellTotalMaxNum = 2000000;
+int GeneNum = 1000;
+int WorldSeed = 12345;
+int EnvirSize = 1000;//环境格的总大小为EnvirSize*EnvirSize
+int PixelPerEnvir = 10;//每个环境格对应的像素大小,决定了缩放大小
+LinkedList<Cell>[] CellList = new LinkedList<Cell>[CellTotalMaxNum+5];
+List<int>[] FuncList = new List<int>[GeneNum+5];
+
+/*功能编号
+1--繁殖
+1--基础繁殖 （10%几率繁殖、在自身及周围八格中随机选择一格能繁殖的繁殖）
+2--基础温度耐受 （25-30）
+3--基础光照需求 （0-100）
+4--基础寿命 （每回合5%几率死亡）
+5--拥挤（周围八连通超过6个个体时，死亡）
+*/
+
+Random predictableRandom = new Random(WorldSeed);
+//自动补全回答：md中，“对任意的”数学符号怎么写？在Markdown中，您可以使用LaTeX语法来表示数学符号。对于“对任意的”，通常使用符号“∀”。在Markdown中，您可以这样写：
+void InitFuncList()
+{
+    FuncList[1] = new List<int> {1};
+    FuncList[2] = new List<int> {2,4};
+    FuncList[3] = new List<int> {3,4};
+    FuncList[4] = new List<int> {4};
+    FuncList[5] = new List<int> {4};
+}
+
+public static class Gene
+{
+    public int id;  
+    
+    public static void init()
+    {
+        return ;
+    }
+}
+public class Cell{
+    public int px,py;//所处的位置
+    public int energy;//能量
+
+    public int priority=1;//优先级，数值越大优先级越高，在每个回合中优先级高的个体先执行行为，优先级相同的个体随机执行，优先级由基因决定。
+
+    public Gene[] MainGeneList = new Gene[Species.MaxMainGene+5];//主干基因，在 species 里初始化
+    public Gene[] SubGeneList = new Gene[Species.MaxMainGene+5];//自由基因
+
+}
+
+//注意一格环境能容纳多个细胞
+public class Envir{
+    public int Temp,Light,CellNum/*该环境内已有的细胞总数*/,_CellMaxNum=CellMaxNum/*该环境格容纳细胞数最大值*/;
+    public Cell[] CellList = new Cell[CellMaxNum+5];
+
+
+    public void AddCell(Cell _cell) {
+        CellList[++CellNum]=_cell;
+
+        
+    }
+}
+public class Species{
+    public int MaxMainGene=5,MaxSubGene=10;
+
+    public void init()
+    {
+        /*该函数内初始化细胞的初始基因*/
+        return ;
+    }
+    
+}
+//自动补全解答：上面该怎么改不标红？
+namespace Multiply/*行为示例：繁殖*/
+{
+    List<Tuple<int,int>>[,] GeneSet = new List<Tuple<int,int>>[1005, 1005];/*第一关键字为优先级，第二关键字为id*/
+    int TriggerId=0;
+    //Func_i_j 表示第i个扳机处，编号为j的基因的实现
+    void Func_1_1()
+    {
+        //实现基础的繁殖功能，即：每回合10%几率繁殖，在自身及周围八格中随机选择一格能繁殖的环境进行繁殖
+        //由于该扳机位于pre，因此该函数只会将要繁殖的指令放到一个缓冲区，而不会真正繁殖。
+        return ;
+    } //基础繁殖基因（id=1）位于扳机1处
+    Dictionary<Tuple<int,int>, Action> ActionDict = new Dictionary<Tuple<int,int>, Action>();
+    HashSet<int>[] TriggerSet = new HashSet<int>[110]; //表示在每个扳机处存在的基因id集合，方便在快速判断是否存在某个基因
+    void init()
+    {
+        ActionDict[(1,1)] = () => Func_1_1();
+        TriggerSet[1].Add(1);  //扳机1处存在id=1的基因的实现
+    }
+    //将每个行为分为 pre 和 apply 两个阶段，pre阶段计算行为的结果，apply阶段将结果应用到环境中
+    //分开之后方便实现一些复杂的行为，例如：一个个体在 pre 阶段计算出自己要繁殖了，但 apply 阶段才真正把新个体添加到环境中，这样就不会影响到同一回合内其他个体的行为计算，且可以解耦优先级，让不同的行为可以互相影响结果。
+    void multiply_pre() //将
+    {
+        TriggerId=1; //意为此处是第一个扳机
+        foreach(var i in CellList)
+        {
+            if(TriggerSet[TriggerId].Contains(i.MainGeneList[TriggerId].id))
+            {
+                ActionDict[(TriggerId,i.MainGeneList[TriggerId].id)]();
+            }
+            if(TriggerSet[TriggerId].Contains(i.SubGeneList[TriggerId].id))
+            {
+                ActionDict[(TriggerId,i.SubGeneList[TriggerId].id)]();
+            }
+        }
+        TriggerId=2;
+        //...第二个扳机
+    }
+    void multiply_apply()
+    {
+        //...可能存在的其他扳机
+        for(int i=1; i<=EnvirSize; i++)
+        {
+            for(int j=1; j<=EnvirSize; j++)
+            {
+                //将缓存区内的繁殖结果先按优先级排序，再应用到环境中。
+                //如果某一时刻多个个体要繁殖到同一格环境中，则优先级高的个体先繁殖，优先级相同的个体随机繁殖，直到该环境格内的个体数达到上限。
+            }
+        }
+    }
+}
+public static class SimulationCore
+{
+    // 共享数据（注意线程安全！）
+    public static float[] particlePositions;  // 位置数据
+    private static object dataLock = new object();  // 用于线程同步
+    
+    // 控制变量
+    private static bool isRunning = false;
+    private static Thread simulationThread;
+    private static Stopwatch timer = new Stopwatch();
+    public static long stepsPerSecond = 0;  // 实际计算频率
+    public static Envir[,] EnvirData = new Envir[1010,1010]; 
+    
+    // 启动计算线程（完全独立于Unity的主循环！）
+    public static void StartCalculationThread()
+    {
+        if (isRunning) return;
+        
+        isRunning = true;
+        particlePositions = new float[10000 * 2];  // 示例：10000个2D粒子
+        
+        simulationThread = new Thread(CalculationLoop);
+        simulationThread.Priority = System.Threading.ThreadPriority.Highest;  // 高优先级
+        simulationThread.IsBackground = true;  // 后台线程
+        simulationThread.Start();
+        
+        Debug.Log("计算线程已启动，独立于Unity主循环运行");
+    }
+    
+    // 真正的计算循环 - 这里Unity完全管不着！
+    private static void CalculationLoop()
+    {
+        timer.Start();
+        long stepCount = 0;
+        
+        // 这是您自己的循环，想跑多快就跑多快！
+        while (isRunning)
+        {
+            // 1. 执行您的核心算法（1e8次计算级别）
+            for (int i = 0; i < 10000; i++)
+            {
+                // 这里是您的数学计算
+                // 示例：简单的正弦波运动
+                float time = (float)timer.Elapsed.TotalSeconds;
+                particlePositions[i * 2] = Mathf.Sin(time + i * 0.1f) * 10;
+                particlePositions[i * 2 + 1] = Mathf.Cos(time + i * 0.1f) * 10;
+            }
+            
+            stepCount++;
+            
+            // 每秒计算实际频率
+            if (timer.ElapsedMilliseconds >= 1000)
+            {
+                lock (dataLock)
+                {
+                    stepsPerSecond = stepCount;
+                }
+                stepCount = 0;
+                timer.Restart();
+            }
+            
+            // 注意：这里没有Thread.Sleep，CPU会全力运行
+            // 如果需要控制频率，可以添加：Thread.Sleep(0);
+        }
+    }
+    
+    // 停止计算
+    public static void StopCalculation()
+    {
+        isRunning = false;
+        simulationThread?.Join();  // 等待线程结束
+    }
+    
+    // 线程安全地获取数据
+    public static float[] GetCurrentPositions()
+    {
+        lock (dataLock)
+        {
+            float[] copy = new float[particlePositions.Length];
+            System.Array.Copy(particlePositions, copy, particlePositions.Length);
+            return copy;
+        }
+    }
+}
