@@ -27,6 +27,22 @@ public class CellRenderer : MonoBehaviour
     private int cachedMinX, cachedMaxX, cachedMinY, cachedMaxY;
     private bool drawGrid = false;
 
+    // 视图模式
+    public enum ViewMode { Terrain = 0, Temperature = 1, Light = 2 }
+    public static ViewMode currentViewMode = ViewMode.Terrain;
+    private ViewMode lastRenderedMode = (ViewMode)(-1);
+
+    // 背景渲染
+    private Texture2D bgTexture;
+    private Material bgMaterial;
+    private Mesh bgMesh;
+
+    // 叠加层（温度/光照热力图）
+    private Texture2D overlayTexture;
+    private Material overlayMaterial;
+    private Mesh overlayMesh;
+    private bool overlayDirty = true;
+
     void Start()
     {
         cameraController = FindObjectOfType<CameraController>();
@@ -35,6 +51,8 @@ public class CellRenderer : MonoBehaviour
         CreateQuadMesh();
         CreateMaterials();
         CreateLineMaterial();
+        CreateBackground();
+        CreateOverlay();
     }
 
     void CreateCircleTexture()
@@ -114,9 +132,158 @@ public class CellRenderer : MonoBehaviour
         lineMaterial.SetInt("_ZWrite", 0);
     }
 
+    void CreateBackground()
+    {
+        int size = SimulationConfig.EnvirSize;
+        bgTexture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        bgTexture.filterMode = FilterMode.Point;
+        bgTexture.wrapMode = TextureWrapMode.Clamp;
+
+        Shader shader = Shader.Find("Sprites/Default");
+        bgMaterial = new Material(shader);
+        bgMaterial.mainTexture = bgTexture;
+        bgMaterial.color = Color.white;
+
+        float worldSize = size * SimulationConfig.PixelPerEnvir;
+        bgMesh = new Mesh();
+        bgMesh.vertices = new Vector3[]
+        {
+            new Vector3(0, 0, 1),
+            new Vector3(worldSize, 0, 1),
+            new Vector3(worldSize, worldSize, 1),
+            new Vector3(0, worldSize, 1)
+        };
+        bgMesh.uv = new Vector2[]
+        {
+            new Vector2(0, 0),
+            new Vector2(1, 0),
+            new Vector2(1, 1),
+            new Vector2(0, 1)
+        };
+        bgMesh.triangles = new int[] { 0, 2, 1, 0, 3, 2 };
+        bgMesh.RecalculateNormals();
+    }
+
+    void CreateOverlay()
+    {
+        int size = SimulationConfig.EnvirSize;
+        overlayTexture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        overlayTexture.filterMode = FilterMode.Bilinear; // 虚化效果
+        overlayTexture.wrapMode = TextureWrapMode.Clamp;
+
+        Shader shader = Shader.Find("Sprites/Default");
+        overlayMaterial = new Material(shader);
+        overlayMaterial.mainTexture = overlayTexture;
+        overlayMaterial.color = Color.white;
+
+        float worldSize = size * SimulationConfig.PixelPerEnvir;
+        overlayMesh = new Mesh();
+        overlayMesh.vertices = new Vector3[]
+        {
+            new Vector3(0, 0, 0.5f),
+            new Vector3(worldSize, 0, 0.5f),
+            new Vector3(worldSize, worldSize, 0.5f),
+            new Vector3(0, worldSize, 0.5f)
+        };
+        overlayMesh.uv = new Vector2[]
+        {
+            new Vector2(0, 0),
+            new Vector2(1, 0),
+            new Vector2(1, 1),
+            new Vector2(0, 1)
+        };
+        overlayMesh.triangles = new int[] { 0, 2, 1, 0, 3, 2 };
+        overlayMesh.RecalculateNormals();
+    }
+
+    void UpdateBackgroundTexture()
+    {
+        if (SimulationCore.EnvirData == null) return;
+        int size = SimulationConfig.EnvirSize;
+        Color32[] pixels = new Color32[size * size];
+
+        // 始终绘制地形底图
+        for (int y = 1; y <= size; y++)
+        {
+            for (int x = 1; x <= size; x++)
+            {
+                Color c;
+                Envir env = SimulationCore.EnvirData[x, y];
+                switch (env.Topography)
+                {
+                    case 0: c = SimulationConfig.TerrainColorOcean; break;
+                    case 2: c = SimulationConfig.TerrainColorBeach; break;
+                    case 3: c = SimulationConfig.TerrainColorRiver; break;
+                    case 4: c = SimulationConfig.TerrainColorLake; break;
+                    default: c = SimulationConfig.TerrainColorLand; break;
+                }
+                pixels[(y - 1) * size + (x - 1)] = c;
+            }
+        }
+
+        bgTexture.SetPixels32(pixels);
+        bgTexture.Apply();
+    }
+
+    void UpdateOverlayTexture()
+    {
+        if (SimulationCore.EnvirData == null) return;
+        int size = SimulationConfig.EnvirSize;
+        Color32[] pixels = new Color32[size * size];
+        float overlayAlpha = SimulationConfig.OverlayAlpha;
+
+        for (int y = 1; y <= size; y++)
+        {
+            for (int x = 1; x <= size; x++)
+            {
+                Envir env = SimulationCore.EnvirData[x, y];
+                Color c;
+
+                if (currentViewMode == ViewMode.Temperature)
+                {
+                    float t = Mathf.InverseLerp(SimulationConfig.TempMin, SimulationConfig.TempMax, env.Temp);
+                    c = Color.Lerp(SimulationConfig.TempColorCold, SimulationConfig.TempColorHot, t);
+                }
+                else
+                {
+                    float l = Mathf.InverseLerp(SimulationConfig.LightMin, SimulationConfig.LightMax, env.Light);
+                    c = Color.Lerp(SimulationConfig.LightColorDark, SimulationConfig.LightColorBright, l);
+                }
+
+                c.a = overlayAlpha;
+                pixels[(y - 1) * size + (x - 1)] = c;
+            }
+        }
+
+        overlayTexture.SetPixels32(pixels);
+        overlayTexture.Apply();
+        overlayDirty = false;
+    }
+
     void LateUpdate()
     {
         if (SimulationCore.EnvirData == null || cameraController == null) return;
+
+        if (currentViewMode != lastRenderedMode)
+        {
+            if (lastRenderedMode == (ViewMode)(-1))
+                UpdateBackgroundTexture(); // 首次初始化地形底图
+            overlayDirty = true;
+            lastRenderedMode = currentViewMode;
+        }
+
+        // 始终渲染地形底图
+        if (bgMesh != null && bgMaterial != null)
+            Graphics.DrawMesh(bgMesh, Matrix4x4.identity, bgMaterial, 0);
+
+        // 温度/光照模式：渲染半透明叠加层
+        if (currentViewMode != ViewMode.Terrain)
+        {
+            if (overlayDirty)
+                UpdateOverlayTexture();
+            if (overlayMesh != null && overlayMaterial != null)
+                Graphics.DrawMesh(overlayMesh, Matrix4x4.identity, overlayMaterial, 0);
+        }
 
         int minX, maxX, minY, maxY;
         cameraController.GetVisibleGridRange(out minX, out maxX, out minY, out maxY);

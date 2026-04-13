@@ -54,13 +54,30 @@ public static class SimulationCore
             }
         }
         AllCells.Clear();
+        // 生成地形（柏林噪声 + 侵蚀 + 河流）
+        TerrainGenerator.Generate(EnvirData, SimulationConfig.WorldSeed);
+
+        // 从世界中心搜索最近陆地作为玩家出生点
         int cx = size / 2, cy = size / 2;
+        for (int r = 0; r <= 200 && EnvirData[cx, cy].Topography == 0; r++)
+        {
+            bool found = false;
+            for (int dx = -r; dx <= r && !found; dx++)
+                for (int dy = -r; dy <= r && !found; dy++)
+                {
+                    if (Math.Abs(dx) != r && Math.Abs(dy) != r) continue;
+                    int tx = cx + dx, ty = cy + dy;
+                    if (tx >= 1 && tx <= size && ty >= 1 && ty <= size && EnvirData[tx, ty].Topography != 0)
+                    { cx = tx; cy = ty; found = true; }
+                }
+        }
         for (int i = 0; i < SimulationConfig.InitialPlayerCells; i++)
         {
             int px = cx + Rng.Next(-5, 6);
             int py = cy + Rng.Next(-5, 6);
             px = Math.Max(1, Math.Min(size, px));
             py = Math.Max(1, Math.Min(size, py));
+            if (EnvirData[px, py].Topography == 0) continue;
             Cell cell = new Cell(px, py, true);
             Species.InitPlayerCell(cell);
             if (EnvirData[px, py].AddCell(cell))
@@ -70,12 +87,20 @@ public static class SimulationCore
         {
             int clusterX = Rng.Next(50, size - 50);
             int clusterY = Rng.Next(50, size - 50);
+            int cAttempts = 0;
+            while (EnvirData[clusterX, clusterY].Topography == 0 && cAttempts++ < 200)
+            {
+                clusterX = Rng.Next(50, size - 50);
+                clusterY = Rng.Next(50, size - 50);
+            }
+            if (EnvirData[clusterX, clusterY].Topography == 0) continue;
             for (int i = 0; i < SimulationConfig.InitialNPCPerCluster; i++)
             {
                 int px = clusterX + Rng.Next(-3, 4);
                 int py = clusterY + Rng.Next(-3, 4);
                 px = Math.Max(1, Math.Min(size, px));
                 py = Math.Max(1, Math.Min(size, py));
+                if (EnvirData[px, py].Topography == 0) continue;
                 Cell cell = new Cell(px, py, false);
                 Species.InitNPCCell(cell, Rng);
                 if (EnvirData[px, py].AddCell(cell))

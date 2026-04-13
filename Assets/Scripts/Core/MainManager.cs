@@ -75,6 +75,7 @@ public class MainManager : MonoBehaviour
         }
 
         DrawSpeedControl(style, shadowStyle);
+        DrawViewModeUI();
     }
 
     void DrawSpeedControl(GUIStyle style, GUIStyle shadowStyle)
@@ -100,5 +101,31 @@ public class MainManager : MonoBehaviour
         string speedText = string.Format("{0}x  ({1:F1}秒/步)", SimulationCore.speedMultiplier, 1f / SimulationCore.speedMultiplier);
         GUI.Label(new Rect(x + 13, y + 60, panelWidth - 20, 22), speedText, shadowStyle);
         GUI.Label(new Rect(x + 12, y + 59, panelWidth - 20, 22), speedText, style);
+    }
+
+    void DrawViewModeUI()
+    {
+        float btnWidth = 100f;
+        float btnHeight = 28f;
+        float spacing = 4f;
+        float totalHeight = btnHeight * 3 + spacing * 2;
+        float x = Screen.width - btnWidth - 16f;
+        float y = Screen.height - totalHeight - 16f;
+
+        string[] labels = { "地形视图", "温度视图", "光照视图" };
+        Color origBg = GUI.backgroundColor;
+
+        for (int i = 0; i < 3; i++)
+        {
+            bool selected = (int)CellRenderer.currentViewMode == i;
+            GUI.backgroundColor = selected ? new Color(0.3f, 0.8f, 1f) : new Color(0.5f, 0.5f, 0.5f);
+            if (GUI.Button(new Rect(x, y, btnWidth, btnHeight), labels[i]))
+            {
+                CellRenderer.currentViewMode = (CellRenderer.ViewMode)i;
+            }
+            y += btnHeight + spacing;
+        }
+
+        GUI.backgroundColor = origBg;
     }
 }

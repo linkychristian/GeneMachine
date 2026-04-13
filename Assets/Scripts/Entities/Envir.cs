@@ -9,6 +9,10 @@ public class Envir
     public int CellNum;           // 当前细胞数量
     public int MaxCellNum;        // 最大容纳细胞数
 
+    public int Height; //高度，介于0-1000之间，为整数
+
+    public int Topography; // 地形类型（0=海洋, 1=陆地, 2=沙滩, 3=河流, 4=湖泊）
+
     public Cell[] CellList;       // 该格中的细胞列表（下标从1开始）
 
     public Envir(int maxCellNum = SimulationConfig.CellMaxNum)
