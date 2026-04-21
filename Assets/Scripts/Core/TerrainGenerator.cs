@@ -51,39 +51,70 @@ public static class TerrainGenerator
 
     private static void GeneratePerlinHeight(float[,] map, int size, int seed)
     {
-        float offsetX = ((seed * 17 + 31) % 10000) * 1.3f;
-        float offsetY = ((seed * 53 + 97) % 10000) * 1.3f;
+        float baseOffsetX = ((seed * 17 + 31) % 10000) * 1.3f;
+        float baseOffsetY = ((seed * 53 + 97) % 10000) * 1.3f;
 
-        float scale = SimulationConfig.NoiseScale;
-        int octaves = SimulationConfig.NoiseOctaves;
-        float persistence = SimulationConfig.NoisePersistence;
-        float lacunarity = SimulationConfig.NoiseLacunarity;
+        float baseScale = SimulationConfig.NoiseBaseScale;
+        int layerCount = SimulationConfig.NoiseLayerCount;
+        float frequencyMultiplier = SimulationConfig.NoiseFrequencyMultiplier;
+        float weightDecay = SimulationConfig.NoiseWeightDecay;
 
-        float maxAmp = 0f;
-        float amp = 1f;
-        for (int o = 0; o < octaves; o++) { maxAmp += amp; amp *= persistence; }
+        float[] layerOffsetX = new float[layerCount];
+        float[] layerOffsetY = new float[layerCount];
+        float maxWeight = 0f;
+        float weight = 1f;
+
+        for (int layer = 0; layer < layerCount; layer++)
+        {
+            layerOffsetX[layer] = baseOffsetX + 137.21f * (layer + 1);
+            layerOffsetY[layer] = baseOffsetY + 263.17f * (layer + 1);
+            maxWeight += weight;
+            weight *= weightDecay;
+        }
 
         for (int x = 1; x <= size; x++)
         {
             for (int y = 1; y <= size; y++)
             {
                 float value = 0f;
-                float amplitude = 1f;
+                float normalizedX = size > 1 ? (x - 1f) / (size - 1f) : 0f;
+                float normalizedY = size > 1 ? (y - 1f) / (size - 1f) : 0f;
                 float frequency = 1f;
+                float layerWeight = 1f;
 
-                for (int o = 0; o < octaves; o++)
+                for (int layer = 0; layer < layerCount; layer++)
                 {
-                    float sx = x * scale * frequency + offsetX;
-                    float sy = y * scale * frequency + offsetY;
-                    float n = Mathf.PerlinNoise(sx, sy);
-                    value += n * amplitude;
-                    amplitude *= persistence;
-                    frequency *= lacunarity;
+                    float tilePeriod = Mathf.Max(0.0001f, (size - 1f) * baseScale * frequency);
+                    float layerNoise = SampleTiledPerlin(
+                        normalizedX,
+                        normalizedY,
+                        tilePeriod,
+                        layerOffsetX[layer],
+                        layerOffsetY[layer]);
+                    value += layerNoise * layerWeight;
+                    frequency *= frequencyMultiplier;
+                    layerWeight *= weightDecay;
                 }
 
-                map[x, y] = Mathf.Clamp01(value / maxAmp) * 1000f;
+                map[x, y] = Mathf.Clamp01(value / maxWeight) * 1000f;
             }
         }
+    }
+
+    private static float SampleTiledPerlin(float normalizedX, float normalizedY,
+        float tilePeriod, float offsetX, float offsetY)
+    {
+        float sampleX = normalizedX * tilePeriod;
+        float sampleY = normalizedY * tilePeriod;
+
+        float sample00 = Mathf.PerlinNoise(offsetX + sampleX, offsetY + sampleY);
+        float sample10 = Mathf.PerlinNoise(offsetX + sampleX - tilePeriod, offsetY + sampleY);
+        float sample01 = Mathf.PerlinNoise(offsetX + sampleX, offsetY + sampleY - tilePeriod);
+        float sample11 = Mathf.PerlinNoise(offsetX + sampleX - tilePeriod, offsetY + sampleY - tilePeriod);
+
+        float blendBottom = Mathf.Lerp(sample00, sample10, normalizedX);
+        float blendTop = Mathf.Lerp(sample01, sample11, normalizedX);
+        return Mathf.Lerp(blendBottom, blendTop, normalizedY);
     }
 
     // ======== 水源寻径河流 + 湖泊生成 ========

@@ -108,14 +108,14 @@ public class MainManager : MonoBehaviour
         float btnWidth = 100f;
         float btnHeight = 28f;
         float spacing = 4f;
-        float totalHeight = btnHeight * 3 + spacing * 2;
+        float totalHeight = btnHeight * 4 + spacing * 3;
         float x = Screen.width - btnWidth - 16f;
         float y = Screen.height - totalHeight - 16f;
 
-        string[] labels = { "地形视图", "温度视图", "光照视图" };
+        string[] labels = { "地形视图", "温度视图", "光照视图", "高度视图" };
         Color origBg = GUI.backgroundColor;
 
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < labels.Length; i++)
         {
             bool selected = (int)CellRenderer.currentViewMode == i;
             GUI.backgroundColor = selected ? new Color(0.3f, 0.8f, 1f) : new Color(0.5f, 0.5f, 0.5f);

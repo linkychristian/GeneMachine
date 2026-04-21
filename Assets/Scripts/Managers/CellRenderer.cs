@@ -28,7 +28,7 @@ public class CellRenderer : MonoBehaviour
     private bool drawGrid = false;
 
     // 视图模式
-    public enum ViewMode { Terrain = 0, Temperature = 1, Light = 2 }
+    public enum ViewMode { Terrain = 0, Temperature = 1, Light = 2, Altitude = 3 }
     public static ViewMode currentViewMode = ViewMode.Terrain;
     private ViewMode lastRenderedMode = (ViewMode)(-1);
 
@@ -202,27 +202,128 @@ public class CellRenderer : MonoBehaviour
         int size = SimulationConfig.EnvirSize;
         Color32[] pixels = new Color32[size * size];
 
-        // 始终绘制地形底图
         for (int y = 1; y <= size; y++)
         {
             for (int x = 1; x <= size; x++)
             {
                 Color c;
                 Envir env = SimulationCore.EnvirData[x, y];
-                switch (env.Topography)
+
+                if (currentViewMode == ViewMode.Altitude)
                 {
-                    case 0: c = SimulationConfig.TerrainColorOcean; break;
-                    case 2: c = SimulationConfig.TerrainColorBeach; break;
-                    case 3: c = SimulationConfig.TerrainColorRiver; break;
-                    case 4: c = SimulationConfig.TerrainColorLake; break;
-                    default: c = SimulationConfig.TerrainColorLand; break;
+                    c = GetAltitudeContourColor(env.Height);
+
+                    int currentLevel = GetAltitudeQuantizedLevel(env.Height);
+                    bool isContourEdge = false;
+
+                    if (x > 1 && GetAltitudeQuantizedLevel(SimulationCore.EnvirData[x - 1, y].Height) != currentLevel) isContourEdge = true;
+                    else if (x < size && GetAltitudeQuantizedLevel(SimulationCore.EnvirData[x + 1, y].Height) != currentLevel) isContourEdge = true;
+                    else if (y > 1 && GetAltitudeQuantizedLevel(SimulationCore.EnvirData[x, y - 1].Height) != currentLevel) isContourEdge = true;
+                    else if (y < size && GetAltitudeQuantizedLevel(SimulationCore.EnvirData[x, y + 1].Height) != currentLevel) isContourEdge = true;
+
+                    if (isContourEdge)
+                        c = Color.Lerp(c, Color.black, SimulationConfig.AltitudeContourDarken);
                 }
+                else
+                {
+                    switch (env.Topography)
+                    {
+                        case 0: c = SimulationConfig.TerrainColorOcean; break;
+                        case 2: c = SimulationConfig.TerrainColorBeach; break;
+                        case 3: c = SimulationConfig.TerrainColorRiver; break;
+                        case 4: c = SimulationConfig.TerrainColorLake; break;
+                        default: c = SimulationConfig.TerrainColorLand; break;
+                    }
+                }
+
                 pixels[(y - 1) * size + (x - 1)] = c;
             }
         }
 
         bgTexture.SetPixels32(pixels);
         bgTexture.Apply();
+    }
+
+    int GetAltitudeQuantizedLevel(int height)
+    {
+        float altitudeT = Mathf.InverseLerp(SimulationConfig.AltitudeMin, SimulationConfig.AltitudeMax, height);
+        int quantizedLevel = Mathf.Clamp(
+            Mathf.FloorToInt(altitudeT * SimulationConfig.AltitudeContourLevels),
+            0,
+            SimulationConfig.AltitudeContourLevels - 1);
+
+        return quantizedLevel;
+    }
+
+    Color GetAltitudeContourColor(int height)
+    {
+        int quantizedLevel = GetAltitudeQuantizedLevel(height);
+        int levelCount = Mathf.Max(2, SimulationConfig.AltitudeContourLevels);
+        float bandMinT = quantizedLevel / (float)levelCount;
+        float bandMaxT = (quantizedLevel + 1) / (float)levelCount;
+        float bandCenterT = (bandMinT + bandMaxT) * 0.5f;
+
+        return EvaluateAltitudeGradient(bandCenterT);
+    }
+
+    Color EvaluateAltitudeGradient(float altitudeT)
+    {
+        float seaLevelT = Mathf.InverseLerp(
+            SimulationConfig.AltitudeMin,
+            SimulationConfig.AltitudeMax,
+            SimulationConfig.AltitudeThreshold);
+        float coastT = Mathf.InverseLerp(
+            SimulationConfig.AltitudeMin,
+            SimulationConfig.AltitudeMax,
+            SimulationConfig.AltitudeThreshold + SimulationConfig.AltitudeCoastBandWidth);
+
+        float coastalPlainT = Mathf.Lerp(coastT, 1f, 0.12f);
+        float lowlandT = Mathf.Lerp(coastT, 1f, 0.28f);
+        float highlandT = Mathf.Lerp(coastT, 1f, 0.46f);
+        float uplandT = Mathf.Lerp(coastT, 1f, 0.66f);
+        float mountainT = Mathf.Lerp(coastT, 1f, 0.84f);
+
+        if (altitudeT <= seaLevelT)
+            return EvaluateAltitudeGradientSegment(altitudeT, 0f, seaLevelT,
+                SimulationConfig.AltitudeColorDeepWater,
+                SimulationConfig.AltitudeColorShallowWater);
+        if (altitudeT <= coastT)
+            return EvaluateAltitudeGradientSegment(altitudeT, seaLevelT, coastT,
+                SimulationConfig.AltitudeColorShallowWater,
+                SimulationConfig.AltitudeColorCoast);
+        if (altitudeT <= coastalPlainT)
+            return EvaluateAltitudeGradientSegment(altitudeT, coastT, coastalPlainT,
+                SimulationConfig.AltitudeColorCoast,
+                SimulationConfig.AltitudeColorCoastalPlain);
+        if (altitudeT <= lowlandT)
+            return EvaluateAltitudeGradientSegment(altitudeT, coastalPlainT, lowlandT,
+                SimulationConfig.AltitudeColorCoastalPlain,
+                SimulationConfig.AltitudeColorLowland);
+        if (altitudeT <= highlandT)
+            return EvaluateAltitudeGradientSegment(altitudeT, lowlandT, highlandT,
+                SimulationConfig.AltitudeColorLowland,
+                SimulationConfig.AltitudeColorHighland);
+        if (altitudeT <= uplandT)
+            return EvaluateAltitudeGradientSegment(altitudeT, highlandT, uplandT,
+                SimulationConfig.AltitudeColorHighland,
+                SimulationConfig.AltitudeColorUpland);
+        if (altitudeT <= mountainT)
+            return EvaluateAltitudeGradientSegment(altitudeT, uplandT, mountainT,
+                SimulationConfig.AltitudeColorUpland,
+                SimulationConfig.AltitudeColorMountain);
+
+        return EvaluateAltitudeGradientSegment(altitudeT, mountainT, 1f,
+            SimulationConfig.AltitudeColorMountain,
+            SimulationConfig.AltitudeColorSnow);
+    }
+
+    Color EvaluateAltitudeGradientSegment(float altitudeT, float startT, float endT, Color startColor, Color endColor)
+    {
+        if (Mathf.Approximately(startT, endT))
+            return endColor;
+
+        float localT = Mathf.InverseLerp(startT, endT, altitudeT);
+        return Color.Lerp(startColor, endColor, localT);
     }
 
     void UpdateOverlayTexture()
@@ -266,8 +367,7 @@ public class CellRenderer : MonoBehaviour
 
         if (currentViewMode != lastRenderedMode)
         {
-            if (lastRenderedMode == (ViewMode)(-1))
-                UpdateBackgroundTexture(); // 首次初始化地形底图
+            UpdateBackgroundTexture();
             overlayDirty = true;
             lastRenderedMode = currentViewMode;
         }
@@ -277,7 +377,7 @@ public class CellRenderer : MonoBehaviour
             Graphics.DrawMesh(bgMesh, Matrix4x4.identity, bgMaterial, 0);
 
         // 温度/光照模式：渲染半透明叠加层
-        if (currentViewMode != ViewMode.Terrain)
+        if (currentViewMode == ViewMode.Temperature || currentViewMode == ViewMode.Light)
         {
             if (overlayDirty)
                 UpdateOverlayTexture();
